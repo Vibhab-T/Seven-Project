@@ -27,6 +27,10 @@ public class MapGenerator : MonoBehaviour
     public GameObject playerCarPrefab;  // Assign your custom car prefab
     public float playerCarSpawnHeight = 0.5f; //
 
+    public GameObject waypointPrefab;
+    public int minPathLength = 5; // Minimum path length for player objective
+    private List<GameObject> waypoints = new List<GameObject>();
+
     private void Start()
     {
         InitializeGrid();
@@ -451,14 +455,99 @@ public class MapGenerator : MonoBehaviour
             return;
         }
 
-        // Pick a random road tile
-        GameObject spawnTile = generatedRoads[Random.Range(0, generatedRoads.Count)];
-        Vector3 spawnPos = spawnTile.transform.position + Vector3.up * playerCarSpawnHeight;
+        // Try to find a valid path for the player
+        if (TryFindValidPath(minPathLength, out List<Vector2Int> path, out Vector2Int startNode))
+        {
+            // Spawn player at start of path
+            GameObject startTile = generatedGrid[startNode.x, startNode.y];
+            Vector3 spawnPos = startTile.transform.position + Vector3.up * playerCarSpawnHeight;
+            GameObject playerCar = Instantiate(playerCarPrefab, spawnPos, playerCarPrefab.transform.rotation);
 
-        // Instantiate the player car
-        GameObject playerCar = Instantiate(playerCarPrefab, spawnPos, playerCarPrefab.transform.rotation);
+            // Create waypoints along the path
+            CreateWaypointsAlongPath(path);
 
-        Debug.Log($"Player car spawned at {spawnPos}");
+            Debug.Log($"Player car spawned at {spawnPos} with a path of {path.Count} steps.");
+        }
+        else
+        {
+            // Fallback: spawn at random road tile without waypoints
+            Debug.LogWarning("No valid path found for player objective. Spawning at random position.");
+            GameObject spawnTile = generatedRoads[Random.Range(0, generatedRoads.Count)];
+            Vector3 spawnPos = spawnTile.transform.position + Vector3.up * playerCarSpawnHeight;
+            Instantiate(playerCarPrefab, spawnPos, playerCarPrefab.transform.rotation);
+        }
+    }
+
+    private bool TryFindValidPath(int minPathLength, out List<Vector2Int> path, out Vector2Int startNode)
+    {
+        path = null;
+        startNode = new Vector2Int(-1, -1);
+
+        if (generatedRoads.Count < 2) return false;
+
+        // Shuffle road tiles to try different starts
+        List<GameObject> shuffledRoads = new List<GameObject>(generatedRoads);
+        shuffledRoads = shuffledRoads.OrderBy(x => Random.value).ToList();
+
+        int maxAttempts = Mathf.Min(20, shuffledRoads.Count); // Limit attempts for performance
+
+        foreach (GameObject startTile in shuffledRoads.Take(maxAttempts))
+        {
+            Vector2Int start = GetTileCoord(startTile);
+            if (start.x == -1) continue;
+
+            // Try to find a goal that's far enough away
+            foreach (GameObject goalTile in shuffledRoads)
+            {
+                if (goalTile == startTile) continue;
+
+                Vector2Int goal = GetTileCoord(goalTile);
+                if (goal.x == -1) continue;
+
+                // Check if the Manhattan distance is sufficient
+                if (Heuristic(start, goal) < minPathLength) continue;
+
+                List<Vector2Int> foundPath = FindPath(start, goal);
+                if (foundPath != null && foundPath.Count >= minPathLength)
+                {
+                    path = foundPath;
+                    startNode = start;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void CreateWaypointsAlongPath(List<Vector2Int> path)
+    {
+        // Clear any existing waypoints
+        foreach (GameObject waypoint in waypoints)
+        {
+            if (waypoint != null) Destroy(waypoint);
+        }
+        waypoints.Clear();
+
+        // Create waypoints along the path (skip the first point where player spawns)
+        for (int i = 1; i < path.Count; i++)
+        {
+            Vector2Int node = path[i];
+            GameObject tile = generatedGrid[node.x, node.y];
+            Vector3 waypointPos = tile.transform.position + Vector3.up * 0.5f; // Slightly above the tile
+
+            GameObject waypoint = Instantiate(waypointPrefab, waypointPos, Quaternion.identity);
+            waypoints.Add(waypoint);
+
+            // Optional: Add visual indicator like a number or arrow
+            WaypointIndicator indicator = waypoint.GetComponent<WaypointIndicator>();
+            if (indicator != null)
+            {
+                indicator.SetOrderNumber(i);
+            }
+        }
+
+        Debug.Log($"Created {waypoints.Count} waypoints along the path");
     }
 }
 

@@ -31,6 +31,8 @@ public class MapGenerator : MonoBehaviour
     public int minPathLength = 5; // Minimum path length for player objective
     private List<GameObject> waypoints = new List<GameObject>();
 
+    public float timeLimit = 120f;
+
     private void Start()
     {
         InitializeGrid();
@@ -548,6 +550,13 @@ public class MapGenerator : MonoBehaviour
         }
 
         Debug.Log($"Created {waypoints.Count} waypoints along the path");
+
+        // Start the timer after creating waypoints
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.SetTotalWaypoints(waypoints.Count);
+            UIManager.Instance.StartTimer(timeLimit);
+        }
     }
 }
 
